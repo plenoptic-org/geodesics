@@ -11,6 +11,9 @@ The code in this repository used to be part of [plenoptic](https://github.com/pl
 
 This repository contains the geodesic code, along with the jupyter notebooks used to demonstrate their usage, and the tests. You are free to use this code for your own purposes and, if you do so, see the [citation](#citation) section for how to credit the code.
 
+> [!CAUTION]
+> This repo is far from stable and will need lots of experimenting before it's ready.
+
 ## Installation
 
 This package is not on PyPI, but can be installed using `pip`, either directly from GitHub:
