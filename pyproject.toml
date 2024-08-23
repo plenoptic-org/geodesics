@@ -1,0 +1,58 @@
+[project]
+name = "geodesics"
+dynamic = ["version"]
+authors = [{name="Plenoptic authors"}]
+description = "Python library for model-based geodesic computation."
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Science/Research",
+]
+keywords = ['neuroscience', 'pytorch', 'visual information processing', 'machine learning', 'explainability', 'computational models']
+
+dependencies = [
+    "torch>=1.8,!=1.12.0",
+    "matplotlib>=3.3",
+    "tqdm>=4.29",
+    "plenoptic",
+]
+
+[build-system]
+requires = ["setuptools", "setuptools-scm[toml]"]
+build-backend = "setuptools.build_meta"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=5.1.2",
+    'pytest-cov',
+    'pytest-xdist',
+    "requests>=2.21",
+]
+
+nb = [
+    'jupyter',
+    'ipywidgets',
+    'nbclient>=0.5.5',
+    "torchvision>=0.3",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/plenoptic-org/geodesics"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools_scm]
+write_to = "src/geodesics/version.py"
+version_scheme = 'python-simplified-semver'
+local_scheme = 'no-local-version'
+
+[tool.pytest.ini_options]
+addopts = "-n auto"
+testpaths = ["tests"]
+
