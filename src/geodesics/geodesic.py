@@ -189,6 +189,7 @@ class Geodesic(OptimizedSynthesis):
         if stop_criterion is None:
             # semi arbitrary default choice of tolerance
             stop_criterion = torch.linalg.vector_norm(self.pixelfade, ord=2) / 1e4 * (1 + 5 ** .5) / 2
+            stop_criterion = stop_criterion.item()
         print(f"\n Stop criterion for pixel_change_norm = {stop_criterion:.5e}")
 
         self._initialize_optimizer(optimizer, '_geodesic', .001)
