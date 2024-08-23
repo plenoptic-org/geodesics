@@ -19,7 +19,7 @@ dependencies = [
     "torch>=1.8,!=1.12.0",
     "matplotlib>=3.3",
     "tqdm>=4.29",
-    "plenoptic",
+    "git+https://github.com/plenoptic-org/plenoptic.git"
 ]
 
 [build-system]
