@@ -35,7 +35,10 @@ jobs:
       uses: FedericoCarboni/setup-ffmpeg@v3.1
     - name: Install dependencies
       run: |
-        pip install --upgrade --upgrade-strategy eager .[dev,nb] papermill
+        pip install --upgrade --upgrade-strategy eager .[dev,nb]
+        # for now, need the git version of plenoptic
+        pip install git+https://github.com/plenoptic-org/plenoptic.git
+
     - name: Run notebooks
       run: |
         for file in notebooks/*ipynb; do
