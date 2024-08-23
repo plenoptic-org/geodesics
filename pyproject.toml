@@ -39,6 +39,7 @@ nb = [
     'ipywidgets',
     'nbclient>=0.5.5',
     "torchvision>=0.3",
+    "pooch",
 ]
 
 [project.urls]
