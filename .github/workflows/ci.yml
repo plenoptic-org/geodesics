@@ -1,0 +1,79 @@
+name: build
+on:
+  workflow_dispatch:
+  schedule:
+  - cron: 0 0 * * 0     # weekly
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+    - main
+
+# want pooch to raise an error if I've updated the file and forgot to update the
+# hash.
+env:
+  POOCH_ALLOW_UPDATES: false
+
+jobs:
+  # based on https://slashgear.github.io/how-to-split-test-by-folder-with-github-action/
+  notebooks:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+      fail-fast: false
+    name: Execute notebooks
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: pip
+        cache-dependency-path: setup.py
+    - name: Setup FFmpeg
+      uses: FedericoCarboni/setup-ffmpeg@v3.1
+    - name: Install dependencies
+      run: |
+        pip install --upgrade --upgrade-strategy eager .[dev,nb] papermill
+    - name: Run notebooks
+      run: |
+        for file in notebooks/*ipynb; do
+           jupyter execute $file --kernel_name=python3
+        done
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+      fail-fast: false
+    name: Run pytest scripts
+    steps:
+    - uses: actions/checkout@v4
+    - name: Install Python 3
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: pip
+        cache-dependency-path: setup.py
+    - name: Install dependencies
+      run: |
+        # using the --upgrade and --upgrade-strategy eager flags ensures that
+        # pip will always install the latest allowed version of all
+        # dependencies, to make sure the cache doesn't go stale
+        pip install --upgrade --upgrade-strategy eager .[dev]
+    - name: Run tests with pytest
+      run: |
+        pytest
+
+  check:
+    if: always()
+    needs:
+    - notebooks
+    - tests
+    runs-on: ubuntu-latest
+    steps:
+    - name: Decide whether all tests and notebooks succeeded
+      uses: re-actors/alls-green@afee1c1eac2a506084c274e9c02c8e0687b48d9e # v1.2.2
+      with:
+        jobs: ${{ toJSON(needs) }}
