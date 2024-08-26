@@ -9,7 +9,7 @@ from plenoptic.tools.signal import polar_to_rectangular, rectangular_to_polar
 
 class FactorizedPyramid(nn.Module):
     """
-    An non-linear transform which factorizes signal and is exactely invertible.
+    An non-linear transform which factorizes signal and is exactly invertible.
 
     Loosely partitions things and stuff.
 
@@ -33,7 +33,7 @@ class FactorizedPyramid(nn.Module):
         eg. from front end, or from recursive calls
         hack: fold channels into batch dim and then back out
 
-    cross channel processing - thats next level
+    cross channel processing - that's next level
     """
     def __init__(self, image_size, n_ori=4, n_scale='auto',
                  downsample_dict=True, is_complex=True,

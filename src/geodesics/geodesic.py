@@ -226,7 +226,7 @@ class Geodesic(OptimizedSynthesis):
         - ``self._most_recent_step_energy = self._calculate_step_energy(self._geodesic_representation)``
 
         These are cached because we might store them (if ``self.store_progress
-        is True``) and don't want to recalcualte them
+        is True``) and don't want to recalculate them
 
         Parameters
         ----------

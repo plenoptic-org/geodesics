@@ -115,9 +115,9 @@ def deviation_from_line(sequence: Tensor,
     Returns
     -------
     dist_along_line
-        sequence of T euclidian distances along the line
+        sequence of T euclidean distances along the line
     dist_from_line
-        sequence of T euclidian distances to the line
+        sequence of T euclidean distances to the line
 
     """
     validate_input(sequence)
