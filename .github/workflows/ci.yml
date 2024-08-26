@@ -61,6 +61,8 @@ jobs:
         cache-dependency-path: setup.py
     - name: Install dependencies
       run: |
+        # for now, need the git version of plenoptic
+        pip install git+https://github.com/plenoptic-org/plenoptic.git
         # using the --upgrade and --upgrade-strategy eager flags ensures that
         # pip will always install the latest allowed version of all
         # dependencies, to make sure the cache doesn't go stale
