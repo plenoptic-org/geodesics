@@ -241,7 +241,8 @@ class TestGeodesic:
             for k in ["image_a", "image_b", "pixelfade", "geodesic"]:
                 if not getattr(moog, k).allclose(getattr(moog_copy, k), rtol=1e-2):
                     raise ValueError(
-                        f"Something went wrong with saving and loading! {k} not the same"
+                        f"Something went wrong with saving and loading! {k} not the"
+                        " same"
                     )
                 # check that can resume
             moog_copy.synthesize(max_iter=4)
@@ -299,9 +300,10 @@ class TestGeodesic:
         seq = geo.translation_sequence(img, 5)
         moog = geo.Geodesic(seq[:1], seq[-1:], model, 5)
         moog.synthesize(max_iter=5)
-        assert (moog.geodesic.shape[1:] == img.shape[1:]), (
+        assert moog.geodesic.shape[1:] == img.shape[1:], (
             "Geodesic image should have same number of channels, height, width"
-            " shape as input!")
+            " shape as input!"
+        )
 
     @pytest.mark.parametrize("model", ["frontend.OnOff.nograd"], indirect=True)
     @pytest.mark.parametrize("func", ["objective_function", "calculate_jerkiness"])
@@ -428,7 +430,7 @@ class TestGeodesic:
                 ValueError, match="initial_sequence must be torch.Size"
             )
         with expectation:
-            moog = geo.Geodesic(
+            geo.Geodesic(
                 einstein_small_seq[:1],
                 einstein_small_seq[-1:],
                 model,
