@@ -1,6 +1,7 @@
+import numpy as np
 import torch
 from torch import Tensor
-import numpy as np
+
 
 def unwrap(p: Tensor, dim: int = -1) -> Tensor:
     """Unwrap by taking the complement of large deltas with respect to the period.
@@ -32,15 +33,17 @@ def unwrap(p: Tensor, dim: int = -1) -> Tensor:
     # for why pad is constructed this way
     pad = p.ndim * [0, 0]
     if dim >= p.ndim or dim < -p.ndim:
-        raise ValueError("dim must lie within [-p.ndim, p.ndim-1], but got "
-                         f"dim={dim} and p.ndim={p.ndim} instead!")
+        raise ValueError(
+            "dim must lie within [-p.ndim, p.ndim-1], but got "
+            f"dim={dim} and p.ndim={p.ndim} instead!"
+        )
     elif dim >= 0:
         idx = 2 * (p.ndim - dim - 1)
     else:
         idx = 2 * abs(dim + 1)
     pad[idx] = 1
     dp = torch.nn.functional.pad(p.diff(dim=dim), pad)
-    dp_m = ((dp+np.pi) % (2 * np.pi)) - np.pi
+    dp_m = ((dp + np.pi) % (2 * np.pi)) - np.pi
     dp_m[(dp_m == -np.pi) & (dp > 0)] = np.pi
     p_adj = dp_m - dp
     p_adj[dp.abs() < np.pi] = 0
