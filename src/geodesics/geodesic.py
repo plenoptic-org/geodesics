@@ -31,16 +31,13 @@ class Geodesic(OptimizedSynthesis):
     Parameters
     ----------
     image_a, image_b
-        Start and stop anchor points of the geodesic, of shape (1, channel,
-        height, width).
+        Start and stop anchor points of the geodesic, of shape ``(1, channel,
+        height, width)``.
     model
         an analysis model that computes representations on signals like `image_a`.
     n_steps
         the number of steps (i.e., transitions) in the trajectory between the
         two anchor points.
-    initial_sequence
-        initialize the geodesic with user-supplied sequence of shape
-        [n_steps+1, C, H, W] or pixel linear interpolation (``None``).
     range_penalty_lambda
         strength of the regularizer that enforces the allowed_range. Must be
         non-negative.
@@ -52,8 +49,8 @@ class Geodesic(OptimizedSynthesis):
     ----------
     geodesic: Tensor
         the synthesized sequence of images between the two anchor points that
-        minimizes representation path energy, of shape ``(n_steps+1, C, H,
-        W)``. It starts with image_a and ends with image_b.
+        minimizes representation path energy, of shape ``(n_steps+1, channel,
+        height, width)``. It starts with image_a and ends with image_b.
     pixelfade: Tensor
         the straight interpolation between the two anchor points,
         used as reference
@@ -93,7 +90,7 @@ class Geodesic(OptimizedSynthesis):
     .. [1] Geodesics of learned representations
         O J Hénaff and E P Simoncelli
         Published in Int'l Conf on Learning Representations (ICLR), May 2016.
-        http://www.cns.nyu.edu/~lcv/pubs/makeAbs.php?loc=Henaff16b
+        https://www.cns.nyu.edu/~lcv/pubs/makeAbs.php?loc=Henaff16b
 
     """
 
@@ -103,7 +100,6 @@ class Geodesic(OptimizedSynthesis):
         image_b: Tensor,
         model: torch.nn.Module,
         n_steps: int = 10,
-        initial_sequence: Tensor | None = None,
         range_penalty_lambda: float = 0.1,
         allowed_range: tuple[float, float] = (0, 1),
     ):
@@ -122,67 +118,142 @@ class Geodesic(OptimizedSynthesis):
         self._image_a = image_a
         self._image_b = image_b
         self.pixelfade = make_straight_line(image_a, image_b, n_steps)
-        self._initialize(initial_sequence, image_a, image_b, n_steps)
+        self._geodesic = None
         self._dev_from_line = []
         self._step_energy = []
+        self._step_energy_dims = None
+        self._geodesic_representation = None
+        self._most_recent_step_energy = None
 
-    def _initialize(
-        self, initial_sequence: Tensor | None, start: Tensor, stop: Tensor, n_steps: int
+    def setup(
+        self,
+        initial_sequence: Tensor | None = None,
+        optimizer: torch.optim.Optimizer | None = None,
+        optimizer_kwargs: dict | None = None,
     ):
-        """initialize the geodesic
+        """Initialize the geodesic and optimizer.
+
+        Can only be called once. If ``load()`` has been called, ``initial_sequence``
+        must be None.
 
         Parameters
         ----------
         initial_sequence
-            initialize the geodesic with user-supplied sequence of shape
-            [n_steps+1, C, H, W] or pixel linear interpolation (``None``).
-        start, stop
-            Start and stop anchor points of the geodesic, of shape [1, C, H, W].
-        n_steps
-            the number of steps (i.e., transitions) in the trajectory between the
-            two anchor points.
+            initialize the geodesic with user-supplied tensor of shape ``(n_steps+1,
+            channel, height, width)`` or pixel linear interpolation (``None``).
+        optimizer :
+            The un-initialized optimizer object to use. If None, we use Adam(lr=.001,
+            amsgrad=True).
+        optimizer_kwargs :
+            The keyword arguments to pass to the optimizer on initialization.
+
+        Examples
+        --------
+        Set initial sequence:
+
+        >>> import geodesics as geo
+        >>> import plenoptic as po
+        >>> img = po.data.einstein()
+        >>> model = po.simul.Gaussian(30)
+        >>> po.tools.remove_grad(model)
+        >>> n_steps = 5
+        >>> seq = geo.translation_sequence(img, n_steps)
+        >>> geod = geo.Geodesic(seq[:1], seq[-1:], model, n_steps=n_steps)
+        >>> geod.setup(seq)
+        >>> geod.synthesize(10)
+
+        Set optimizer:
+
+        >>> import geodesics as geo
+        >>> import plenoptic as po
+        >>> img = po.data.einstein()
+        >>> model = po.simul.Gaussian(30)
+        >>> po.tools.remove_grad(model)
+        >>> geod = geo.Geodesic(img, img/2, model)
+        >>> geod.setup(optimizer=torch.optim.SGD, optimizer_kwargs={"lr": 0.01})
+        >>> geod.synthesize(10)
+
+        Use with save/load. Only the optimizer object is necessary, its kwargs and the
+        initial sequence are handled by load.
+
+        >>> import geodesics as geo
+        >>> import plenoptic as po
+        >>> img = po.data.einstein()
+        >>> model = po.simul.Gaussian(30)
+        >>> po.tools.remove_grad(model)
+        >>> n_steps = 5
+        >>> seq = geo.translation_sequence(img, n_steps)
+        >>> geod = geo.Geodesic(seq[:1], seq[-1:], model, n_steps=n_steps)
+        >>> geod.setup(seq, optimizer=torch.optim.SGD,
+        ...            optimizer_kwargs={"lr": 0.01})
+        >>> geod.synthesize(10)
+        >>> geod.save("geod_setup.pt")
+        >>> geod = geo.Geodesic(seq[:1], seq[-1:], model, n_steps=n_steps)
+        >>> geod.load("geod_setup.pt")
+        >>> geod.setup(optimizer=torch.optim.SGD)
+        >>> geod.synthesize(10)
 
         """
-        if initial_sequence is None:
-            geodesic = make_straight_line(start, stop, n_steps)
+        if self._geodesic is None:
+            if initial_sequence is None:
+                geodesic = make_straight_line(
+                    self._image_a, self._image_b, self.n_steps
+                )
+            else:
+                if (
+                    initial_sequence.ndimension() < 4
+                    or initial_sequence.shape[0] != self.n_steps + 1
+                ):
+                    raise ValueError(
+                        "initial_sequence must be torch.Size([self.n_steps+1"
+                        ", n_channels, im_height, im_width]) but got "
+                        f"{initial_sequence.shape}"
+                    )
+                if (
+                    initial_sequence.shape[1:] != self._image_a.shape[1:]
+                    or initial_sequence.shape[1:] != self._image_b.shape[1:]
+                ):
+                    raise ValueError(
+                        "initial_sequence, image_a, and image_b must have same"
+                        " number of channels, height and width, but got"
+                        f"initial_sequence: {initial_sequence.shape}, "
+                        f"image_a: {self._image_a.shape}, "
+                        f"image_b: {self._image_b.shape}."
+                    )
+                if not torch.equal(initial_sequence[0], self._image_a[0]):
+                    raise ValueError(
+                        "First frame of initial_sequence must be the same as image_a!"
+                    )
+                if not torch.equal(initial_sequence[-1], self._image_b[0]):
+                    raise ValueError(
+                        "Last frame of initial_sequence must be the same as image_b!"
+                    )
+                geodesic = initial_sequence.clone().detach()
+                geodesic = geodesic.to(
+                    dtype=self._image_a.dtype, device=self._image_a.device
+                )
+            _, geodesic, _ = torch.split(geodesic, [1, self.n_steps - 1, 1])
+            geodesic.requires_grad_()
+            self._geodesic = geodesic
         else:
-            if (
-                initial_sequence.ndimension() < 4
-                or initial_sequence.shape[0] != n_steps + 1
-            ):
+            if self._loaded:
+                if initial_sequence is not None:
+                    raise ValueError(
+                        "Cannot set initial_sequence after calling load()!"
+                    )
+            else:
                 raise ValueError(
-                    "initial_sequence must be torch.Size([n_steps+1"
-                    ", n_channels, im_height, im_width]) but got "
-                    f"{initial_sequence.size()}"
+                    "setup() can only be called once and must be called"
+                    " before synthesize()!"
                 )
-            if (
-                initial_sequence.size()[1:] != start.size()[1:]
-                or initial_sequence.size()[1:] != stop.size()[1:]
-            ):
-                raise ValueError(
-                    "initial_sequence, image_a, and image_b must have same"
-                    " number of channels, height and width, but got"
-                    f"initial_sequence: {initial_sequence.size()}, "
-                    f"image_a: {start.size()}, image_b: {stop.size()}."
-                )
-            if not torch.equal(initial_sequence[0], start[0]):
-                raise ValueError(
-                    "First frame of initial_sequence must be the same as image_a!"
-                )
-            if not torch.equal(initial_sequence[-1], stop[0]):
-                raise ValueError(
-                    "Last frame of initial_sequence must be the same as image_b!"
-                )
-            geodesic = initial_sequence.clone().detach()
-            geodesic = geodesic.to(dtype=start.dtype, device=start.device)
-        _, geodesic, _ = torch.split(geodesic, [1, n_steps - 1, 1])
-        geodesic.requires_grad_()
-        self._geodesic = geodesic
+        # initialize the optimizer
+        self._initialize_optimizer(optimizer, self._geodesic, optimizer_kwargs, 0.001)
+        # reset _loaded, if everything ran successfully
+        self._loaded = False
 
     def synthesize(
         self,
         max_iter: int = 1000,
-        optimizer: torch.optim.Optimizer | None = None,
         store_progress: bool | int = False,
         stop_criterion: float | None = None,
         stop_iters_to_check: int = 50,
@@ -194,11 +265,6 @@ class Geodesic(OptimizedSynthesis):
         max_iter
             The maximum number of iterations to run before we end synthesis
             (unless we hit the stop criterion).
-        optimizer
-            The optimizer to use. If None and this is the first time calling
-            synthesize, we use Adam(lr=.001, amsgrad=True); if synthesize has
-            been called before, this must be None and we reuse the previous
-            optimizer.
         store_progress
             Whether we should store the step energy and deviation of the
             representation from a straight line. If False, we don't save
@@ -220,11 +286,15 @@ class Geodesic(OptimizedSynthesis):
             # semi arbitrary default choice of tolerance
             stop_criterion = (
                 torch.linalg.vector_norm(self.pixelfade, ord=2) / 1e4 * (1 + 5**0.5) / 2
+            ).item()
+            warnings.warn(
+                "Since stop_criterion was None, automatically set to "
+                f"{stop_criterion:.5e}"
             )
-            stop_criterion = stop_criterion.item()
-        print(f"\n Stop criterion for pixel_change_norm = {stop_criterion:.5e}")
 
-        self._initialize_optimizer(optimizer, "_geodesic", 0.001)
+        # if setup hasn't been called manually, call it now.
+        if self._geodesic is None or isinstance(self._optimizer, tuple):
+            self.setup()
 
         # get ready to store progress
         self.store_progress = store_progress
@@ -284,7 +354,13 @@ class Geodesic(OptimizedSynthesis):
     def _calculate_step_energy(self, z):
         """calculate the energy (i.e. squared l2 norm) of each step in `z`."""
         velocity = torch.diff(z, dim=0)
-        step_energy = torch.linalg.vector_norm(velocity, ord=2, dim=[2, 3]) ** 2
+        # the first time we call calculate_step_energy, we cache this info for later
+        # use. this allows us to work with representations of 3 or 4 dims
+        if self._step_energy_dims is None:
+            self._step_energy_dims = list(range(1, z.ndim))
+        step_energy = (
+            torch.linalg.vector_norm(velocity, ord=2, dim=self._step_energy_dims) ** 2
+        )
         return step_energy
 
     def _optimizer_step(self, pbar):
@@ -333,6 +409,7 @@ class Geodesic(OptimizedSynthesis):
          | |
         no yes
          | '---->Is ``(self.pixel_change_norm[-stop_iters_to_check:] < stop_criterion).all()``?
+         |        |
          |      no |
          |       | yes
          <-------' |
@@ -458,11 +535,11 @@ class Geodesic(OptimizedSynthesis):
             The path to save the Geodesic object to
 
         """
-        # I don't think any of our existing attributes can be used to check
-        # whether model has changed (unlike Metamer, which stores
-        # target_representation), so we use the following as a proxy
-        self._save_check = self.objective_function(self.pixelfade)
-        super().save(file_path, attrs=None)
+        save_io_attrs = [
+            ("_model", ("_geodesic",)),
+        ]
+        save_state_dict_attrs = ["_optimizer"]
+        super().save(file_path, save_io_attrs, save_state_dict_attrs)
 
     def to(self, *args, **kwargs):
         r"""Moves and/or casts the parameters and buffers.
@@ -509,13 +586,16 @@ class Geodesic(OptimizedSynthesis):
         ]
         super().to(*args, attrs=attrs, **kwargs)
 
-    def load(self, file_path: str, map_location: str | None = None, **pickle_load_args):
+    def load(
+        self,
+        file_path: str,
+        map_location: str | None = None,
+        **pickle_load_args,
+    ):
         r"""Load all relevant stuff from a .pt file.
 
-        This should be called by an initialized ``Geodesic`` object -- we will
-        ensure that ``image_a``, ``image_b``, ``model``, ``n_steps``,
-        ``range_penalty_lambda``, ``allowed_range``, and
-        ``pixelfade`` are all identical.
+        This must be called by a ``Geodesic`` object initialized just like the saved
+        object.
 
         Note this operates in place and so doesn't return anything.
 
@@ -535,14 +615,17 @@ class Geodesic(OptimizedSynthesis):
 
         Examples
         --------
-        >>> geo = po.synth.Geodesic(img_a, img_b, model)
-        >>> geo.synthesize(max_iter=10, store_progress=True)
-        >>> geo.save('geo.pt')
-        >>> geo_copy = po.synth.Geodesic(img_a, img_b, model)
-        >>> geo_copy.load('geo.pt')
-
-        Note that you must create a new instance of the Synthesis object and
-        *then* load.
+        >>> import plenoptic as po
+        >>> import geodesics as geo
+        >>> img_a = po.data.einstein()
+        >>> img_b = po.data.curie()
+        >>> model = po.simul.Gaussian(30)
+        >>> po.tools.remove_grad(model)
+        >>> geod = geo.Geodesic(img_a, img_b, model)
+        >>> geod.synthesize(max_iter=5, store_progress=True)
+        >>> geod.save('geo.pt')
+        >>> geod_copy = po.synth.Geodesic(img_a, img_b, model)
+        >>> geod_copy.load('geo.pt')
 
         """
         check_attributes = [
@@ -553,21 +636,16 @@ class Geodesic(OptimizedSynthesis):
             "_allowed_range",
             "pixelfade",
         ]
-        check_loss_functions = []
-        new_loss = self.objective_function(self.pixelfade)
+        check_io_attrs = [("_model", ("_geodesic",))]
         super().load(
             file_path,
+            "_geodesic",
             map_location=map_location,
             check_attributes=check_attributes,
-            check_loss_functions=check_loss_functions,
+            check_io_attributes=check_io_attrs,
+            state_dict_attributes=["_optimizer"],
             **pickle_load_args,
         )
-        old_loss = self.__dict__.pop("_save_check")
-        if not torch.allclose(new_loss, old_loss, rtol=1e-2):
-            raise ValueError(
-                "objective_function on pixelfade of saved and initialized Geodesic object are different! Do they use the same model?"
-                f" Self: {new_loss}, Saved: {old_loss}"
-            )
         # make this require a grad again
         self._geodesic.requires_grad_()
         # these are always supposed to be on cpu, but may get copied over to
@@ -594,6 +672,10 @@ class Geodesic(OptimizedSynthesis):
     # combines this with the end points
     @property
     def geodesic(self):
+        if self._geodesic is None:
+            # in this case, setup() hasn't been called yet. returning None matches the
+            # behavior of other synthesis objects
+            return None
         return torch.cat([self.image_a, self._geodesic, self.image_b])
 
     @property
