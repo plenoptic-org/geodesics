@@ -185,15 +185,32 @@ class TestGeodesic:
 
     @pytest.mark.parametrize("model", ["frontend.OnOff.nograd"], indirect=True)
     @pytest.mark.parametrize(
-        "fail", [False, "img_a", "img_b", "model", "n_steps", "range_penalty"]
+        "fail",
+        [
+            False,
+            "img_a",
+            "img_b",
+            "model",
+            "n_steps",
+            "range_penalty",
+            "allowed_range",
+        ],
     )
-    def test_save_load(self, einstein_small_seq, model, fail, tmp_path):
+    @pytest.mark.parametrize("range_penalty", [0.1, 0])
+    @pytest.mark.parametrize("allowed_range", [(0, 1), (-1, 1)])
+    def test_save_load(
+        self, einstein_small_seq, model, fail, range_penalty, allowed_range, tmp_path
+    ):
         img_a = einstein_small_seq[:1]
         img_b = einstein_small_seq[-1:]
         n_steps = 3
-        range_penalty = 0
         moog = geo.Geodesic(
-            img_a, img_b, model, n_steps, range_penalty_lambda=range_penalty
+            img_a,
+            img_b,
+            model,
+            n_steps,
+            range_penalty_lambda=range_penalty,
+            allowed_range=allowed_range,
         )
         moog.synthesize(max_iter=4)
         moog.save(op.join(tmp_path, "test_geodesic_save_load.pt"))
@@ -201,52 +218,353 @@ class TestGeodesic:
             if fail == "img_a":
                 img_a = torch.rand_like(img_a)
                 expectation = pytest.raises(
-                    ValueError, match="Saved and initialized image_a are different"
+                    ValueError,
+                    match=(
+                        "Saved and initialized attribute image_a have different values"
+                    ),
                 )
             elif fail == "img_b":
                 img_b = torch.rand_like(img_b)
                 expectation = pytest.raises(
-                    ValueError, match="Saved and initialized image_b are different"
+                    ValueError,
+                    match=(
+                        "Saved and initialized attribute image_b have different values"
+                    ),
                 )
             elif fail == "model":
-                model = po.simul.Gaussian(30).to(DEVICE)
+                model = po.simul.OnOff(30).to(DEVICE)
                 po.tools.remove_grad(model)
                 expectation = pytest.raises(
-                    ValueError, match="objective_function on pixelfade of saved"
+                    ValueError,
+                    match="Saved and initialized model output have different values",
                 )
             elif fail == "n_steps":
                 n_steps = 5
                 expectation = pytest.raises(
-                    ValueError, match="Saved and initialized n_steps are different"
+                    ValueError,
+                    match="Saved and initialized n_steps are different",
+                )
+            elif fail == "allowed_range":
+                allowed_range = (0, 5)
+                expectation = pytest.raises(
+                    ValueError,
+                    match=("Saved and initialized allowed_range are different"),
                 )
             elif fail == "range_penalty":
                 range_penalty = 0.5
                 expectation = pytest.raises(
                     ValueError,
-                    match="Saved and initialized range_penalty_lambda are different",
+                    match=("Saved and initialized range_penalty_lambda are different"),
                 )
             moog_copy = geo.Geodesic(
-                img_a, img_b, model, n_steps, range_penalty_lambda=range_penalty
+                img_a,
+                img_b,
+                model,
+                n_steps,
+                range_penalty_lambda=range_penalty,
+                allowed_range=allowed_range,
             )
             with expectation:
                 moog_copy.load(
-                    op.join(tmp_path, "test_geodesic_save_load.pt"), map_location=DEVICE
+                    op.join(tmp_path, "test_geodesic_save_load.pt"),
+                    map_location=DEVICE,
                 )
         else:
             moog_copy = geo.Geodesic(
-                img_a, img_b, model, n_steps, range_penalty_lambda=range_penalty
+                img_a,
+                img_b,
+                model,
+                n_steps,
+                range_penalty_lambda=range_penalty,
+                allowed_range=allowed_range,
             )
             moog_copy.load(
-                op.join(tmp_path, "test_geodesic_save_load.pt"), map_location=DEVICE
+                op.join(tmp_path, "test_geodesic_save_load.pt"),
+                map_location=DEVICE,
             )
             for k in ["image_a", "image_b", "pixelfade", "geodesic"]:
                 if not getattr(moog, k).allclose(getattr(moog_copy, k), rtol=1e-2):
                     raise ValueError(
-                        f"Something went wrong with saving and loading! {k} not the"
-                        " same"
+                        "Something went wrong with saving and loading!"
+                        f" {k} not the same"
                     )
-                # check that can resume
+            # check that can resume
             moog_copy.synthesize(max_iter=4)
+
+    @pytest.mark.parametrize("model", ["frontend.OnOff.nograd"], indirect=True)
+    def test_setup_fail(self, einstein_img, model):
+        geod = geo.Geodesic(einstein_img, einstein_img / 2, model)
+        geod.setup()
+        with pytest.raises(ValueError, match="setup\(\) can only be called once"):
+            geod.setup()
+
+    @pytest.mark.parametrize("model", ["frontend.OnOff.nograd"], indirect=True)
+    def test_synth_then_setup(self, einstein_img, model, tmp_path):
+        geod = geo.Geodesic(einstein_img, einstein_img / 2, model)
+        geod.setup(optimizer=torch.optim.SGD)
+        geod.synthesize(max_iter=4)
+        geod.save(op.join(tmp_path, "test_geodesic_synth_then_setup.pt"))
+        geod = geo.Geodesic(einstein_img, einstein_img / 2, model)
+        geod.load(op.join(tmp_path, "test_geodesic_synth_then_setup.pt"))
+        with pytest.raises(ValueError, match="Don't know how to initialize"):
+            geod.synthesize(5)
+        geod.setup(optimizer=torch.optim.SGD)
+        geod.synthesize(5)
+
+    @pytest.mark.parametrize("model", ["frontend.OnOff.nograd"], indirect=True)
+    def test_setup_load_fail(self, einstein_img, model, tmp_path):
+        geod = geo.Geodesic(einstein_img, einstein_img / 2, model)
+        geod.synthesize(max_iter=4)
+        geod.save(op.join(tmp_path, "test_geodesic_setup_load_fail.pt"))
+        geod = geo.Geodesic(einstein_img, einstein_img / 2, model)
+        geod.load(op.join(tmp_path, "test_geodesic_setup_load_fail.pt"))
+        with pytest.raises(
+            ValueError, match="Cannot set initial_sequence after calling load"
+        ):
+            geod.setup(po.data.curie())
+
+    @pytest.mark.parametrize("model", ["frontend.OnOff.nograd"], indirect=True)
+    def test_load_pixelfade(self, einstein_img, model, tmp_path):
+        # the only way this can change, really, is if I change the make_straight_line
+        # function, but might as well make sure
+        geod = geo.Geodesic(einstein_img, einstein_img / 2, model)
+        geod.synthesize(max_iter=4, store_progress=True)
+        geod.save(op.join(tmp_path, "test_geodesic_load_pixelfade.pt"))
+        geod = geo.Geodesic(einstein_img, einstein_img / 2, model)
+        geod.pixelfade = torch.rand_like(geod.pixelfade)
+        with pytest.raises(
+            ValueError,
+            match=("Saved and initialized attribute pixelfade have different values"),
+        ):
+            geod.load(op.join(tmp_path, "test_geodesic_load_pixelfade.pt"))
+
+    @pytest.mark.parametrize("model", ["frontend.OnOff.nograd"], indirect=True)
+    def test_load_init_fail(self, einstein_img, model, tmp_path):
+        geod = geo.Geodesic(einstein_img, einstein_img / 2, model)
+        geod.synthesize(max_iter=4, store_progress=True)
+        geod.save(op.join(tmp_path, "test_geodesic_load_init_fail.pt"))
+        with pytest.raises(
+            ValueError, match="load can only be called with a just-initialized"
+        ):
+            geod.load(op.join(tmp_path, "test_geodesic_load_init_fail.pt"))
+
+    @pytest.mark.parametrize("model", ["frontend.OnOff.nograd"], indirect=True)
+    def test_examine_saved_object(self, einstein_img, model, tmp_path):
+        geod = geo.Geodesic(einstein_img, einstein_img / 2, model)
+        geod.synthesize(max_iter=4, store_progress=True)
+        geod.save(op.join(tmp_path, "test_geodesic_examine .pt"))
+        po.tools.examine_saved_synthesis(op.join(tmp_path, "test_geodesic_examine .pt"))
+
+    @pytest.mark.parametrize("model", ["frontend.OnOff.nograd"], indirect=True)
+    @pytest.mark.parametrize("synth_type", ["eig", "mad"])
+    def test_load_object_type(self, einstein_img, model, synth_type, tmp_path):
+        geod = geo.Geodesic(einstein_img, einstein_img / 2, model)
+        geod.synthesize(max_iter=4, store_progress=True)
+        geod.save(op.join(tmp_path, "test_geodesic_load_object_type.pt"))
+        if synth_type == "eig":
+            geod = po.synth.Eigendistortion(einstein_img, model)
+        elif synth_type == "mad":
+            geod = po.synth.MADCompetition(
+                einstein_img, po.metric.mse, po.metric.mse, "min"
+            )
+        with pytest.raises(
+            ValueError, match="Saved object was a.* but initialized object is"
+        ):
+            geod.load(op.join(tmp_path, "test_geodesic_load_object_type.pt"))
+
+    @pytest.mark.parametrize("model", ["frontend.OnOff.nograd"], indirect=True)
+    @pytest.mark.parametrize("model_behav", ["dtype", "shape", "name"])
+    def test_load_model_change(self, einstein_img, model, model_behav, tmp_path):
+        geod = geo.Geodesic(einstein_img, einstein_img / 2, model)
+        geod.synthesize(max_iter=4, store_progress=True)
+        geod.save(op.join(tmp_path, "test_geodesic_load_model_change.pt"))
+        if model_behav == "dtype":
+            # this actually gets raised in the model validation step (during init), not
+            # load.
+            expectation = pytest.raises(TypeError, match="model changes precision")
+        elif model_behav == "shape":
+            expectation = pytest.raises(
+                ValueError,
+                match="Saved and initialized model output have different shape",
+            )
+        elif model_behav == "name":
+            expectation = pytest.raises(
+                ValueError, match="Saved and initialized model have different names"
+            )
+
+        class NewModel(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.model = model
+
+            def forward(self, x):
+                if model_behav == "dtype":
+                    return self.model(x).to(torch.float64)
+                elif model_behav == "shape":
+                    return self.model(x).flatten(-2)
+                elif model_behav == "name":
+                    return self.model(x)
+
+        with expectation:
+            geod = geo.Geodesic(einstein_img, einstein_img / 2, NewModel())
+            geod.load(op.join(tmp_path, "test_geodesic_load_model_change.pt"))
+
+    @pytest.mark.parametrize("model", ["frontend.OnOff.nograd"], indirect=True)
+    @pytest.mark.parametrize("attribute", ["saved", "init"])
+    def test_load_attributes(self, einstein_img, model, attribute, tmp_path):
+        geod = geo.Geodesic(einstein_img, einstein_img / 2, model)
+        geod.synthesize(max_iter=4, store_progress=True)
+        if attribute == "saved":
+            geod.test = "BAD"
+            err_str = "Saved"
+        geod.save(op.join(tmp_path, "test_geodesic_load_attributes.pt"))
+        geod = geo.Geodesic(einstein_img, einstein_img / 2, model)
+        if attribute == "init":
+            geod.test = "BAD"
+            err_str = "Initialized"
+        with pytest.raises(
+            ValueError, match=f"{err_str} object has 1 attribute\(s\) not present"
+        ):
+            geod.load(op.join(tmp_path, "test_geodesic_load_attributes.pt"))
+
+    @pytest.mark.parametrize("model", ["frontend.OnOff.nograd"], indirect=True)
+    @pytest.mark.parametrize(
+        "optim_opts", [None, "SGD", "SGD-args", "Adam", "Adam-args"]
+    )
+    @pytest.mark.parametrize("fail", [True, False])
+    def test_load_optimizer(self, curie_img, model, optim_opts, fail, tmp_path):
+        geod = geo.Geodesic(curie_img, curie_img / 2, model)
+        optimizer = None
+        optimizer_kwargs = None
+        check_optimizer = [torch.optim.Adam, {"eps": 1e-8, "lr": 0.001}]
+        if optim_opts is not None:
+            if "Adam" in optim_opts:
+                optimizer = torch.optim.Adam
+            elif "SGD" in optim_opts:
+                optimizer = torch.optim.SGD
+                check_optimizer[0] = torch.optim.SGD
+                check_optimizer[1] = {"lr": 0.001}
+            if "args" in optim_opts:
+                optimizer_kwargs = {"lr": 1}
+                check_optimizer[1] = {"lr": 1}
+        geod.setup(optimizer=optimizer, optimizer_kwargs=optimizer_kwargs)
+        geod.synthesize(max_iter=5)
+        geod.save(op.join(tmp_path, "test_geodesic_optimizer.pt"))
+        geod = geo.Geodesic(curie_img, curie_img / 2, model)
+        geod.load(op.join(tmp_path, "test_geodesic_optimizer.pt"))
+        optimizer_kwargs = None
+        if not fail:
+            if optim_opts is not None:
+                if "Adam" in optim_opts:
+                    optimizer = torch.optim.Adam
+                elif "SGD" in optim_opts:
+                    optimizer = torch.optim.SGD
+            expectation = does_not_raise()
+        else:
+            expect_str = "User-specified optimizer must have same type"
+            if optim_opts is None:
+                optimizer = torch.optim.SGD
+            else:
+                if optim_opts == "Adam":
+                    optimizer = torch.optim.SGD
+                elif optim_opts == "Adam-args":
+                    optimizer = torch.optim.Adam
+                    optimizer_kwargs = {"lr": 1}
+                    expect_str = (
+                        "When initializing optimizer after load, optimizer_kwargs"
+                    )
+                elif optim_opts == "SGD":
+                    optimizer = None
+                    expect_str = "Don't know how to initialize saved optimizer"
+                elif optim_opts == "SGD-args":
+                    optimizer = torch.optim.SGD
+                    optimizer_kwargs = {"lr": 1}
+                    expect_str = (
+                        "When initializing optimizer after load, optimizer_kwargs"
+                    )
+            expectation = pytest.raises(ValueError, match=expect_str)
+        with expectation:
+            geod.setup(optimizer=optimizer, optimizer_kwargs=optimizer_kwargs)
+            geod.synthesize(max_iter=5)
+            if not isinstance(geod.optimizer, check_optimizer[0]):
+                raise ValueError("Didn't properly set optimizer!")
+            state_dict = geod.optimizer.state_dict()["param_groups"][0]
+            for k, v in check_optimizer[1].items():
+                if state_dict[k] != v:
+                    raise ValueError(
+                        "Didn't properly set optimizer kwargs! "
+                        f"Expected {v} but got {state_dict[k]}!"
+                    )
+
+    @pytest.mark.parametrize("model", ["frontend.OnOff.nograd"], indirect=True)
+    @pytest.mark.parametrize("load", [True, False])
+    def test_resume_synthesis(self, einstein_img, model, load, tmp_path):
+        geod = geo.Geodesic(einstein_img, einstein_img / 2, model)
+        # Adam has some stochasticity in its initialization(?), so this test doesn't
+        # quite work with it (it does if you do po.tools.set_seed(2) at the top of the
+        # function)
+        geod.setup(optimizer=torch.optim.SGD)
+        geod.synthesize(10)
+        geod_copy = geo.Geodesic(einstein_img, einstein_img / 2, model)
+        geod_copy.setup(optimizer=torch.optim.SGD)
+        geod_copy.synthesize(5)
+        if load:
+            geod_copy.save(op.join(tmp_path, "test_geodesic_resume_synthesis.pt"))
+            geod_copy = geo.Geodesic(einstein_img, einstein_img / 2, model)
+            geod_copy.load(op.join(tmp_path, "test_geodesic_resume_synthesis.pt"))
+            geod_copy.setup(optimizer=torch.optim.SGD)
+            geod_copy.synthesize(5)
+        else:
+            geod_copy.synthesize(5)
+        if not torch.allclose(geod.geodesic, geod_copy.geodesic):
+            raise ValueError("Resuming synthesis different than just continuing!")
+
+    # test that we support models with 3d and 4d outputs
+    @pytest.mark.parametrize(
+        "model",
+        ["PortillaSimoncelli", "frontend.OnOff.nograd"],
+        indirect=True,
+    )
+    def test_model_dimensionality(self, einstein_img, model):
+        geod = geo.Geodesic(einstein_img, einstein_img / 2, model)
+        geod.synthesize(5)
+
+    @pytest.mark.parametrize("model", ["frontend.OnOff.nograd"], indirect=True)
+    @pytest.mark.parametrize(
+        "optimizer", ["SGD", "SGD-args", "Adam", "Adam-args", None]
+    )
+    def test_optimizer(self, einstein_img, model, optimizer):
+        geod = geo.Geodesic(einstein_img, einstein_img / 2, model)
+        optimizer = None
+        optimizer_kwargs = None
+        check_optimizer = [torch.optim.Adam, {"eps": 1e-8, "lr": 0.001}]
+        if optimizer == "Adam":
+            optimizer = torch.optim.Adam
+        elif optimizer == "Adam-args":
+            optimizer = torch.optim.Adam
+            optimizer_kwargs = {"eps": 1e-5}
+            check_optimizer[1]["eps"] = 1e-5
+        elif optimizer == "SGD":
+            optimizer = torch.optim.SGD
+            check_optimizer = [torch.optim.SGD, {"lr": 0.001}]
+        elif optimizer == "SGD-args":
+            optimizer = torch.optim.SGD
+            optimizer_kwargs = {"lr": 1}
+            check_optimizer = [torch.optim.SGD, {"lr": 1}]
+        geod.setup(
+            optimizer=optimizer,
+            optimizer_kwargs=optimizer_kwargs,
+        )
+        geod.synthesize(max_iter=5)
+        if not isinstance(geod.optimizer, check_optimizer[0]):
+            raise ValueError("Didn't properly set optimizer!")
+        state_dict = geod.optimizer.state_dict()["param_groups"][0]
+        for k, v in check_optimizer[1].items():
+            if state_dict[k] != v:
+                raise ValueError(
+                    "Didn't properly set optimizer kwargs! "
+                    f"Expected {v} but got {state_dict[k]}!"
+                )
 
     @pytest.mark.skipif(DEVICE.type == "cpu", reason="Only makes sense to test on cuda")
     @pytest.mark.parametrize("model", ["Identity"], indirect=True)
@@ -440,11 +758,11 @@ class TestGeodesic:
             expectation = pytest.raises(
                 ValueError, match="initial_sequence must be torch.Size"
             )
-        geo.Geodesic(
+        geod = geo.Geodesic(
             einstein_small_seq[:1],
             einstein_small_seq[-1:],
             model,
             5,
         )
         with expectation:
-            geo.setup(init)
+            geod.setup(init)

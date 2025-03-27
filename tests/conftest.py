@@ -60,6 +60,8 @@ def get_model(name):
         mdl = po.simul.OnOff((31, 31), pretrained=True, cache_filt=True).to(DEVICE)
         po.tools.remove_grad(mdl)
         return mdl
+    elif name == "PortillaSimoncelli":
+        return po.simul.PortillaSimoncelli((256, 256)).to(DEVICE)
 
 
 @pytest.fixture(scope="package")
