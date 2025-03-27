@@ -57,6 +57,7 @@ local_scheme = 'no-local-version'
 [tool.pytest.ini_options]
 addopts = "-n auto"
 testpaths = ["tests"]
+doctest_optionflags = "NORMALIZE_WHITESPACE NUMBER"
 
 [tool.ruff]
 extend-include = ["*.ipynb"]
