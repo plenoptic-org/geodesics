@@ -14,6 +14,9 @@ This repository contains the geodesic code, along with the jupyter notebooks use
 > [!CAUTION]
 > This repo is far from stable and will need lots of experimenting before it's ready.
 
+> [!NOTE]
+> This repo depends on the version of plenoptic in the main branch of the github repo, **not** the most recent PyPI release.
+
 ## Notebook
 
 The `notebooks/` folder contains two representations of the same notebook: myst-nb (markdown, `.md`) and jupyter notebook (`.ipynb`). These notebooks are [paired](https://jupytext.readthedocs.io/en/latest/paired-notebooks.html); the intended use case is to work in the markdown document (either through your text editor or in jupyter lab by using [jupytext](https://jupytext.readthedocs.io/en/latest/text-notebooks.html)), then the notebook should be run and the outputs cached in the `ipynb` file. That way, we can view the (relatively clean) git history of the markdown file, while still previewing the cached outputs in the ipynb file rendered by GitHub.
