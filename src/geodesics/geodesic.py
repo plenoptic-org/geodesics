@@ -623,9 +623,9 @@ class Geodesic(OptimizedSynthesis):
         >>> po.tools.remove_grad(model)
         >>> geod = geo.Geodesic(img_a, img_b, model)
         >>> geod.synthesize(max_iter=5, store_progress=True)
-        >>> geod.save('geo.pt')
-        >>> geod_copy = po.synth.Geodesic(img_a, img_b, model)
-        >>> geod_copy.load('geo.pt')
+        >>> geod.save('geo_load.pt')
+        >>> geod_copy = geo.Geodesic(img_a, img_b, model)
+        >>> geod_copy.load('geo_load.pt')
 
         """
         check_attributes = [
