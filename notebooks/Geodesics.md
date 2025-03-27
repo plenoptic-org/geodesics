@@ -5,7 +5,7 @@ jupytext:
     extension: .md
     format_name: myst
     format_version: 0.13
-    jupytext_version: 1.16.4
+    jupytext_version: 1.16.6
 kernelspec:
   display_name: geodesics [conda env:base] *
   language: python
@@ -208,9 +208,9 @@ stop = torch.cat([amp * torch.cos(angle), amp * torch.sin(angle)]).reshape((1, 1
 geo = geodesics.Geodesic(
     start, stop, model, 10, range_penalty_lambda=0, allowed_range=(-10, 10)
 )
-opt = torch.optim.Adam([geo._geodesic], lr=1e-2)
+geo.setup(optimizer=torch.optim.Adam, optimizer_kwargs={"lr": 1e-2})
 # we'll also lower the stop criterion, since we're dealing with such small changes
-geo.synthesize(2000, stop_criterion=1e-6, optimizer=opt)
+geo.synthesize(2000, stop_criterion=1e-6)
 ```
 
 And let's look at both diagnostics, which show we're in pretty good shape.
@@ -289,9 +289,9 @@ model.eval()
 abs_geo = geodesics.Geodesic(
     start, stop, model, 10, range_penalty_lambda=0, allowed_range=(-10, 10)
 )
-opt = torch.optim.Adam([abs_geo._geodesic], lr=1e-2)
+abs_geo.setup(optimizer=torch.optim.Adam, optimizer_kwargs={"lr": 1e-2})
 # we'll also lower the stop criterion, since we're dealing with such small changes
-abs_geo.synthesize(500, stop_criterion=1e-6, optimizer=opt)
+abs_geo.synthesize(500, stop_criterion=1e-6)
 ```
 
 And let's look at both diagnostics, which show we're in pretty good shape.
@@ -402,9 +402,16 @@ model = model.to(device)
 
 ```{code-cell} ipython3
 geo = geodesics.Geodesic(
-    seq[:1], seq[-1:], model, 11, initial_sequence=init
+    seq[:1],
+    seq[-1:],
+    model,
+    11,
 )  # range_penalty_lambda=0)
-opt = torch.optim.Adam([geo._geodesic], 1e-2, amsgrad=True)
+geo.setup(
+    initial_sequence=init,
+    optimizer=torch.optim.Adam,
+    optimizer_kwargs={"lr": 1e-2, "amsgrad": True},
+)
 ```
 
 ```{code-cell} ipython3
@@ -412,7 +419,7 @@ po.imshow(geo.pixelfade, (0, 1), zoom=4, col_wrap=6);
 ```
 
 ```{code-cell} ipython3
-geo.synthesize(3000, stop_criterion=1e-10, store_progress=100, optimizer=opt)
+geo.synthesize(3000, stop_criterion=1e-10, store_progress=100)
 ```
 
 ```{code-cell} ipython3
@@ -563,7 +570,9 @@ This section is not ready. We are unsure why we could not reproduce the results 
 # we use an optional dependency, pooch. If the following raises an ImportError
 # or ModuleNotFoundError for you, then install pooch in your plenoptic environment
 # and restart your kernel.
-sample_image_dir = po.data.fetch_data("sample_images.tar.gz")
+from plenoptic.data.fetch import fetch_data
+
+sample_image_dir = fetch_data("sample_images.tar.gz")
 imgA = po.load_images(sample_image_dir / "frontwindow_affine.jpeg", as_gray=False)
 imgB = po.load_images(sample_image_dir / "frontwindow.jpeg", as_gray=False)
 crop_h = 300

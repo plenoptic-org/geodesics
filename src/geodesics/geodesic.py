@@ -357,7 +357,7 @@ class Geodesic(OptimizedSynthesis):
         # the first time we call calculate_step_energy, we cache this info for later
         # use. this allows us to work with representations of 3 or 4 dims
         if self._step_energy_dims is None:
-            self._step_energy_dims = list(range(1, z.ndim))
+            self._step_energy_dims = list(range(2, z.ndim))
         step_energy = (
             torch.linalg.vector_norm(velocity, ord=2, dim=self._step_energy_dims) ** 2
         )
