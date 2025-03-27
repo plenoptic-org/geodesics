@@ -23,20 +23,20 @@ class TestSequences:
         stop = torch.randn(1, d).reshape(1, 1, sqrt_d, sqrt_d).to(DEVICE)
         b = geo.sample_brownian_bridge(start, stop, t, d**0.5)
         a, f = geo.deviation_from_line(b, normalize=True)
-        assert torch.abs(a[t // 2] - 0.5) < 1e-2, f"{a[t//2]}"
-        assert torch.abs(f[t // 2] - 2**0.5 / 2) < 1e-2, f"{f[t//2]}"
+        assert torch.abs(a[t // 2] - 0.5) < 1e-2, f"{a[t // 2]}"
+        assert torch.abs(f[t // 2] - 2**0.5 / 2) < 1e-2, f"{f[t // 2]}"
 
     @pytest.mark.parametrize("normalize", [True, False])
     def test_deviation_from_line_multichannel(self, normalize, einstein_img):
         einstein_img = einstein_img.repeat(1, 3, 1, 1)
         seq = geo.translation_sequence(einstein_img)
         dist_along, dist_from = geo.deviation_from_line(seq, normalize)
-        assert (
-            dist_along.shape[0] == seq.shape[0]
-        ), "Distance along line has wrong number of transitions!"
-        assert (
-            dist_from.shape[0] == seq.shape[0]
-        ), "Distance from  line has wrong number of transitions!"
+        assert dist_along.shape[0] == seq.shape[0], (
+            "Distance along line has wrong number of transitions!"
+        )
+        assert dist_from.shape[0] == seq.shape[0], (
+            "Distance from  line has wrong number of transitions!"
+        )
 
     @pytest.mark.parametrize("n_steps", [1, 10])
     @pytest.mark.parametrize("max_norm", [0, 1, 10])
@@ -126,12 +126,12 @@ class TestSequences:
             einstein_img = einstein_img.repeat(1, 3, 1, 1)
         with expectation:
             shifted = geo.translation_sequence(einstein_img, n_steps)
-            assert torch.equal(
-                shifted[0], einstein_img[0]
-            ), "somehow first frame changed!"
-            assert torch.equal(
-                shifted[1, 0, :, 1], shifted[0, 0, :, 0]
-            ), "wrong dimension was translated!"
+            assert torch.equal(shifted[0], einstein_img[0]), (
+                "somehow first frame changed!"
+            )
+            assert torch.equal(shifted[1, 0, :, 1], shifted[0, 0, :, 0]), (
+                "wrong dimension was translated!"
+            )
 
     @pytest.mark.parametrize(
         "func",
@@ -162,25 +162,26 @@ class TestGeodesic:
         sequence = geo.translation_sequence(einstein_img_small, n_steps)
         moog = geo.Geodesic(sequence[:1], sequence[-1:], model, n_steps)
         if optimizer == "SGD":
-            optimizer = torch.optim.SGD([moog._geodesic], lr=0.01)
-            moog.synthesize(max_iter=5, optimizer=optimizer)
-            geo.plot_loss(moog)
-            geo.plot_deviation_from_line(moog, natural_video=sequence)
-            moog.calculate_jerkiness()
+            optimizer = torch.optim.SGD
+        moog.setup(optimizer=optimizer)
+        moog.synthesize(max_iter=5)
+        geo.plot_loss(moog)
+        geo.plot_deviation_from_line(moog, natural_video=sequence)
+        moog.calculate_jerkiness()
 
     @pytest.mark.parametrize("model", ["frontend.OnOff.nograd"], indirect=True)
     def test_endpoints_dont_change(self, einstein_small_seq, model):
         moog = geo.Geodesic(einstein_small_seq[:1], einstein_small_seq[-1:], model, 5)
         moog.synthesize(max_iter=5)
-        assert torch.equal(
-            moog.geodesic[0], einstein_small_seq[0]
-        ), "Somehow first endpoint changed!"
-        assert torch.equal(
-            moog.geodesic[-1], einstein_small_seq[-1]
-        ), "Somehow last endpoint changed!"
-        assert not torch.equal(
-            moog.pixelfade[1:-1], moog.geodesic[1:-1]
-        ), "Somehow middle of geodesic didn't changed!"
+        assert torch.equal(moog.geodesic[0], einstein_small_seq[0]), (
+            "Somehow first endpoint changed!"
+        )
+        assert torch.equal(moog.geodesic[-1], einstein_small_seq[-1]), (
+            "Somehow last endpoint changed!"
+        )
+        assert not torch.equal(moog.pixelfade[1:-1], moog.geodesic[1:-1]), (
+            "Somehow middle of geodesic didn't changed!"
+        )
 
     @pytest.mark.parametrize("model", ["frontend.OnOff.nograd"], indirect=True)
     @pytest.mark.parametrize(
@@ -255,6 +256,7 @@ class TestGeodesic:
         moog.save(op.join(tmp_path, "test_geodesic_map_location.pt"))
         # calling load with map_location effectively switches everything
         # over to that device
+        model.to("cpu")
         moog_copy = geo.Geodesic(einstein_small_seq[:1], einstein_small_seq[-1:], model)
         moog_copy.load(
             op.join(tmp_path, "test_geodesic_map_location.pt"), map_location="cpu"
@@ -262,6 +264,8 @@ class TestGeodesic:
         assert moog_copy.geodesic.device.type == "cpu"
         assert moog_copy.image_a.device.type == "cpu"
         moog_copy.synthesize(max_iter=4, store_progress=True)
+        # reset model device for other tests
+        model.to(DEVICE)
 
     @pytest.mark.parametrize("model", ["Identity"], indirect=True)
     @pytest.mark.parametrize("to_type", ["dtype", "device"])
@@ -275,7 +279,7 @@ class TestGeodesic:
             # can only run this one if we're on a device with CPU and GPU.
         elif to_type == "device" and DEVICE.type != "cpu":
             moog.to("cpu")
-            moog.geodesic - moog.image_a
+        moog.geodesic - moog.image_a
 
     @pytest.mark.parametrize("model", ["Identity"], indirect=True)
     def test_change_precision_save_load(self, einstein_small_seq, model, tmp_path):
@@ -309,16 +313,17 @@ class TestGeodesic:
     @pytest.mark.parametrize("func", ["objective_function", "calculate_jerkiness"])
     def test_funcs_external_tensor(self, einstein_small_seq, model, func):
         moog = geo.Geodesic(einstein_small_seq[:1], einstein_small_seq[-1:], model, 5)
+        moog.setup()
         no_arg = getattr(moog, func)()
         arg_tensor = torch.rand_like(moog.geodesic)
         # calculate jerkiness requires tensor to have gradient attached
         # (because we use autodiff functions)
         if func == "calculate_jerkiness":
             arg_tensor.requires_grad_()
-            with_arg = getattr(moog, func)(arg_tensor)
-            assert not torch.equal(
-                no_arg, with_arg
-            ), f"{func} is not using the input tensor!"
+        with_arg = getattr(moog, func)(arg_tensor)
+        assert not torch.equal(no_arg, with_arg), (
+            f"{func} is not using the input tensor!"
+        )
 
     @pytest.mark.parametrize("model", ["frontend.OnOff.nograd"], indirect=True)
     def test_continue(self, einstein_small_seq, model):
@@ -343,26 +348,26 @@ class TestGeodesic:
         max_iter = 3
         if store_progress == 3:
             max_iter = 6
-            moog.synthesize(max_iter=max_iter, store_progress=store_progress)
-            assert len(moog.step_energy) == np.ceil(
-                max_iter / store_progress
-            ), "Didn't end up with enough step_energy after first synth!"
-            assert len(moog.dev_from_line) == np.ceil(
-                max_iter / store_progress
-            ), "Didn't end up with enough dev_from_line after first synth!"
-            assert (
-                len(moog.losses) == max_iter
-            ), "Didn't end up with enough losses after first synth!"
-            moog.synthesize(max_iter=max_iter, store_progress=store_progress)
-            assert len(moog.step_energy) == np.ceil(
-                2 * max_iter / store_progress
-            ), "Didn't end up with enough step_energy after second synth!"
-            assert len(moog.dev_from_line) == np.ceil(
-                2 * max_iter / store_progress
-            ), "Didn't end up with enough dev_from_line after second synth!"
-            assert (
-                len(moog.losses) == 2 * max_iter
-            ), "Didn't end up with enough losses after second synth!"
+        moog.synthesize(max_iter=max_iter, store_progress=store_progress)
+        assert len(moog.step_energy) == np.ceil(max_iter / store_progress), (
+            "Didn't end up with enough step_energy after first synth!"
+        )
+        assert len(moog.dev_from_line) == np.ceil(max_iter / store_progress), (
+            "Didn't end up with enough dev_from_line after first synth!"
+        )
+        assert len(moog.losses) == max_iter, (
+            "Didn't end up with enough losses after first synth!"
+        )
+        moog.synthesize(max_iter=max_iter, store_progress=store_progress)
+        assert len(moog.step_energy) == np.ceil(2 * max_iter / store_progress), (
+            "Didn't end up with enough step_energy after second synth!"
+        )
+        assert len(moog.dev_from_line) == np.ceil(2 * max_iter / store_progress), (
+            "Didn't end up with enough dev_from_line after second synth!"
+        )
+        assert len(moog.losses) == 2 * max_iter, (
+            "Didn't end up with enough losses after second synth!"
+        )
 
     @pytest.mark.parametrize("model", ["frontend.OnOff.nograd"], indirect=True)
     def test_stop_criterion(self, einstein_small_seq, model):
@@ -371,9 +376,15 @@ class TestGeodesic:
         po.tools.set_seed(0)
         moog = geo.Geodesic(einstein_small_seq[:1], einstein_small_seq[-1:], model, 5)
         moog.synthesize(max_iter=10, stop_criterion=0.06, stop_iters_to_check=1)
-        assert (
-            len(moog.pixel_change_norm) == 6
-        ), "Didn't stop when hit criterion! (or optimization changed)"
+        assert len(moog.pixel_change_norm) == 6, (
+            "Didn't stop when hit criterion! (or optimization changed)"
+        )
+        assert (abs(moog.pixel_change_norm[-1:]) < 0.06).all(), (
+            "Didn't stop when hit criterion!"
+        )
+        assert (abs(moog.pixel_change_norm[:-1]) > 0.06).all(), (
+            "Stopped after hit criterion!"
+        )
 
     @pytest.mark.parametrize("model", ["frontend.OnOff.nograd"], indirect=True)
     @pytest.mark.parametrize(
@@ -429,11 +440,11 @@ class TestGeodesic:
             expectation = pytest.raises(
                 ValueError, match="initial_sequence must be torch.Size"
             )
+        geo.Geodesic(
+            einstein_small_seq[:1],
+            einstein_small_seq[-1:],
+            model,
+            5,
+        )
         with expectation:
-            geo.Geodesic(
-                einstein_small_seq[:1],
-                einstein_small_seq[-1:],
-                model,
-                5,
-                initial_sequence=init,
-            )
+            geo.setup(init)
