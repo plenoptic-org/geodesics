@@ -14,6 +14,10 @@ This repository contains the geodesic code, along with the jupyter notebooks use
 > [!CAUTION]
 > This repo is far from stable and will need lots of experimenting before it's ready.
 
+## Notebook
+
+The `notebooks/` folder contains two representations of the same notebook: myst-nb (markdown, `.md`) and jupyter notebook (`.ipynb`). These notebooks are [paired](https://jupytext.readthedocs.io/en/latest/paired-notebooks.html); the intended use case is to work in the markdown document (either through your text editor or in jupyter lab by using [jupytext](https://jupytext.readthedocs.io/en/latest/text-notebooks.html)), then the notebook should be run and the outputs cached in the `ipynb` file. That way, we can view the (relatively clean) git history of the markdown file, while still previewing the cached outputs in the ipynb file rendered by GitHub.
+
 ## Status
 
 > [!NOTE]
@@ -28,9 +32,9 @@ The first goal would be to reproduce the results of Henaff and Simoncelli, 2016 
  - Project the representational geodesic out of the image-domain geodesic
  - Take the resulting step
  - Repeat until convergence
- 
+
 This algorithm thus has an inner and outer loop, so that the representation-space optimization is run until convergence, then the image-space optimization, and back and forth until there's no movement from either.
- 
+
 Using this algorithm, the authors are able to show that the VGG 16 network using L2 pooling has geodesics that more closely align with human perception than the same network with max pooling. Then the goal would be to take this object and use it on a variety of models and images and validate that it behaves reasonably well.
 
 Should probably start simpler than that though, so: implement the above algorithm and use it with a relatively simple model, such as the `FactorizedPyramid`, which computes the amplitude and phase of the [steerable pyramid](https://plenoptic.readthedocs.io/en/latest/tutorials/models/03_Steerable_Pyramid.html) coefficients. Using two locally different images as the endpoints (e.g., smiling and frowning views of the same face), rather than globally different ones (e.g., different semantic categories, global translation or rotation), will probably be more meaningful here.
@@ -49,7 +53,7 @@ This package is not on PyPI, but can be installed using `pip`, either directly f
 ```bash
 pip install git+https://github.com/plenoptic-org/geodesics.git
 ```
- 
+
 or from a local copy:
 
 ```bash
