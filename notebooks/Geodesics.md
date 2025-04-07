@@ -5,7 +5,7 @@ jupytext:
     extension: .md
     format_name: myst
     format_version: 0.13
-    jupytext_version: 1.16.6
+    jupytext_version: 1.16.4
 kernelspec:
   display_name: geodesics [conda env:base] *
   language: python
@@ -355,7 +355,7 @@ As an aside: why, you might wonder, do we only teleport over the axis once? If w
 ```{code-cell} ipython3
 img = po.data.einstein()
 img = po.tools.blur_downsample(img, 2)
-seq = po.tools.translation_sequence(img, img.shape[-1] // 4)
+seq = geodesics.translation_sequence(img, img.shape[-1] // 4)
 po.imshow(seq[[0, -1]], zoom=4);
 ```
 
@@ -390,7 +390,7 @@ model.eval()
 - More text: first we instantiate a geodesic object, which requires specifying two anchor images (the algorithm finds images that lie on the geodesic connecting these two points)
 
 ```{code-cell} ipython3
-init = po.tools.straightness.sample_brownian_bridge(seq[:1], seq[-1:], 11, 100)
+init = geodesics.sample_brownian_bridge(seq[:1], seq[-1:], 11, 100)
 init[-1] = seq[-1]
 ```
 

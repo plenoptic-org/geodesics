@@ -2,6 +2,8 @@ import plenoptic as po
 import pytest
 import torch
 
+import geodesics
+
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 DTYPE = torch.float32
 
@@ -34,7 +36,7 @@ def einstein_img():
 
 @pytest.fixture(scope="package")
 def einstein_small_seq(einstein_img_small):
-    return po.tools.translation_sequence(einstein_img_small, 5)
+    return geodesics.translation_sequence(einstein_img_small, 5)
 
 
 @pytest.fixture(scope="package")
